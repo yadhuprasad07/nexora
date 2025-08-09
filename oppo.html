@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Opposite AI — Sarcastic & Accurate Opposites</title>
+<style>
+  :root{
+    --bg:#0f0f10; --panel:#161616; --accent:#ff5252; --text:#e8e8e8;
+    --user:#00d9ff; --bot:#ffb14b;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--text)}
+  .wrap{max-width:800px;margin:28px auto;padding:18px}
+  h1{color:var(--accent);margin:0 0 12px}
+  .panel{background:var(--panel);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+  #chat{height:420px;overflow:auto;padding:12px;border-radius:8px;background:#0b0b0b;border:1px solid rgba(255,82,82,.06)}
+  .msg{margin:8px 0;line-height:1.35}
+  .user{color:var(--user)}
+  .bot{color:var(--bot)}
+  .controls{display:flex;gap:8px;margin-top:12px;align-items:center}
+  input[type="text"]{flex:1;padding:12px;border-radius:8px;border:none;background:#141414;color:var(--text);outline:2px solid rgba(255,255,255,.02)}
+  button{padding:10px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer}
+  .small{font-size:13px;color:#bbb}
+  .row{display:flex;gap:8px;align-items:center}
+  .toggle{background:#222;padding:6px 8px;border-radius:8px;color:#ddd}
+  .muted{color:#8c8c8c;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🤖 Opposite AI — Sarcastic Mode (Accurate Opposites + Funny Math)</h1>
+    <div class="panel">
+      <div id="chat" aria-live="polite"></div>
+
+      <div class="controls">
+        <input id="input" type="text" placeholder="Type anything (e.g. 'hello', 'good morning', '2 + 2', 'please help')">
+        <button id="send">Send</button>
+        <button id="clear" title="Clear chat">Clear</button>
+        <div style="margin-left:8px" class="row">
+          <label class="toggle"><input id="tts" type="checkbox"> TTS</label>
+        </div>
+      </div>
+      <div style="margin-top:8px" class="muted">Tips: Multi-word phrases (like "good morning") are matched first. Math supported: simple two-number expressions with one operator (+ - * /).</div>
+    </div>
+  </div>
+
+<script>
+// ----------------- Opposites (phrase-first) -----------------
+const phraseOpposites = {
+  "good morning": "good evening",
+  "good evening": "good morning",
+  "good night": "good day",
+  "how are you": "why do you care",
+  "see you later": "never see you again",
+  "thank you": "no thanks",
+  "i love you": "i hate you",
+  "i am sorry": "i couldn't care less"
+};
+
+const wordOpposites = {
+  "hello":"goodbye","hi":"bye","please":"absolutely not","yes":"no","no":"yes",
+  "love":"hate","happy":"sad","sad":"happy","up":"down","down":"up",
+  "left":"right","right":"left","hot":"cold","cold":"hot","big":"small","small":"big",
+  "open":"close","close":"open","fast":"slow","slow":"fast","thank":"curse"
+};
+
+// ----------------- sarcastic templates & suffixes (random) -----------------
+const templates = [
+  (resp)=>`Nope — ${resp}`,
+  (resp)=>`Sure... ${resp} (not really).`,
+  (resp)=>`${resp}. Congratulations, you're wrong.`,
+  (resp)=>`${resp} — I said it so you don't have to.`,
+  (resp)=>`${resp}. Pat yourself on the back for trying.`,
+  (resp)=>`${resp} — scientifically disappointing.`
+];
+
+const suffixes = [
+  "…obviously.",
+  "…did you expect logic?",
+  "…beautifully incorrect.",
+  "…you’re welcome for nothing.",
+  "…this will haunt your exams.",
+  "…purely opposite energy."
+];
+
+// ----------------- utility helpers -----------------
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+function escapeHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// convert operator to word (for nicer output)
+const opWord = { "+":"plus", "-":"minus", "*":"times", "/":"divided by" };
+
+// ----------------- math handling -----------------
+function parseSimpleMath(text){
+  // match: number (spaces) op (spaces) number
+  // allow integers and decimals, optional leading +/-
+  const match = text.trim().match(/^([+-]?\d+(\.\d+)?)[\s]*([\+\-\*\/])[\s]*([+-]?\d+(\.\d+)?)$/);
+  if(!match) return null;
+  return {
+    a: Number(match[1]),
+    op: match[3],
+    b: Number(match[4])
+  };
+}
+
+function flipOperator(op){
+  if(op === "+") return "-";
+  if(op === "-") return "+";
+  if(op === "*") return "/";
+  if(op === "/") return "*";
+  return op;
+}
+
+function computeSwapped(a, op, b){
+  const swapped = flipOperator(op);
+  // handle division by zero
+  try{
+    switch(swapped){
+      case "+": return a + b;
+      case "-": return a - b;
+      case "*": return a * b;
+      case "/": return b === 0 ? null : a / b;
+    }
+  }catch(e){
+    return null;
+  }
+  return null;
+}
+
+function numberToText(n){
+  if(n === null) return "undefined";
+  // short formatting and also words for small integers
+  if(Number.isFinite(n) && Math.abs(n) < 1e6 && Math.trunc(n) === n){
+    const smallWords = ["zero","one","two","three","four","five","six","seven","eight","nine","ten",
+      "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen","twenty"];
+    if(Math.abs(n) < smallWords.length) return (n<0?"minus ":"") + smallWords[Math.abs(n)];
+  }
+  // default numeric formatting
+  if(Number.isFinite(n)) return Math.round(n*100)/100 + "";
+  return String(n);
+}
+
+// ----------------- phrase replacement (longest-first) -----------------
+function replacePhrases(text){
+  const lower = text.toLowerCase();
+  // check phraseOpposites first, longest keys first
+  const phrases = Object.keys(phraseOpposites).sort((a,b)=>b.length-a.length);
+  for(const p of phrases){
+    // match whole phrase using word boundaries where possible
+    const regex = new RegExp("\\b"+p.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i");
+    if(regex.test(lower)){
+      return {found:true, replaced: text.replace(regex, phraseOpposites[p])};
+    }
+  }
+  return {found:false, replaced:text};
+}
+
+// ----------------- word-by-word opposite (keeps unknown words but prefixes 'anti-') -----------------
+function wordOppositeTransform(text){
+  // split preserving punctuation as separate tokens
+  const tokens = text.match(/\w+|[^\s\w]+/g) || []; // words or punctuation
+  const transformed = tokens.map(tok=>{
+    const lower = tok.toLowerCase();
+    if(wordOpposites[lower]) return wordOpposites[lower];
+    // keep punctuation as-is
+    if(/^[^\w]+$/.test(tok)) return tok;
+    // otherwise prefix anti-
+    return "anti-" + tok;
+  });
+  return transformed.join(" ");
+}
+
+// ----------------- main response generator -----------------
+function generateResponse(input){
+  const trimmed = input.trim();
+  if(!trimmed) return "";
+
+  // 1) check for simple math first (only if entire input is math)
+  const math = parseSimpleMath(trimmed);
+  if(math){
+    const swappedOp = flipOperator(math.op);
+    const swappedResult = computeSwapped(math.a, math.op, math.b);
+    // format words e.g. "2 plus 2" -> "2 minus 2 = zero"
+    const aTxt = numberToText(math.a);
+    const bTxt = numberToText(math.b);
+    const swappedOpWord = opWord[swappedOp] || swappedOp;
+    const resTxt = numberToText(swappedResult);
+    // choose template
+    const templatesMath = [
+      (s)=>`Nope — that's actually ${aTxt} ${swappedOpWord} ${bTxt} = ${resTxt}. ${s}`,
+      (s)=>`Wrong. Try ${aTxt} ${swappedOpWord} ${bTxt} which equals ${resTxt}. ${s}`,
+      (s)=>`You meant: ${aTxt} ${swappedOpWord} ${bTxt} = ${resTxt}. Brilliant. ${s}`,
+    ];
+    const sfx = pick(suffixes);
+    return pick(templatesMath)(sfx);
+  }
+
+  // 2) phrase matching
+  const phraseCheck = replacePhrases(trimmed);
+  if(phraseCheck.found){
+    const sfx = pick(suffixes);
+    return pick(templates)(phraseCheck.replaced) + " " + sfx;
+  }
+
+  // 3) word-by-word transform
+  const flipped = wordOppositeTransform(trimmed);
+  // add varied sarcasm
+  const sfx = pick(suffixes);
+  return pick(templates)(flipped) + " " + sfx;
+}
+
+// ----------------- UI wiring -----------------
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const clearBtn = document.getElementById("clear");
+const ttsToggle = document.getElementById("tts");
+
+function appendMessage(text, cls){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.innerHTML = escapeHtml(text);
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function speak(text){
+  if(!ttsToggle.checked) return;
+  if(window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1;
+  u.pitch = 1;
+  // choose a default voice if available
+  const voices = speechSynthesis.getVoices();
+  if(voices.length) u.voice = voices.find(v=>/female|google|default/i.test(v.name)) || voices[0];
+  speechSynthesis.speak(u);
+}
+
+function handleSend(){
+  const txt = input.value.trim();
+  if(!txt) return;
+  appendMessage("You: " + txt, "user");
+  const reply = generateResponse(txt);
+  appendMessage("Opposite AI: " + reply, "bot");
+  speak(reply);
+  input.value = "";
+  input.focus();
+}
+
+sendBtn.addEventListener("click", handleSend);
+input.addEventListener("keydown", e => { if(e.key === "Enter") handleSend() });
+clearBtn.addEventListener("click", ()=> { chat.innerHTML = ""; input.focus(); });
+
+// preload voices (some browsers require user interaction)
+if('speechSynthesis' in window) speechSynthesis.getVoices();
+</script>
+</body>
+</html>
